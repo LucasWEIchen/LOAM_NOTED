@@ -171,7 +171,7 @@ void VeloToStartIMU()
     Rz(pitch).inverse * Rx(pitch).inverse * Ry(yaw).inverse * delta_Vg
     transfrom from the global frame to the local frame
   *********************************************************************************/
-  
+
   //绕y轴旋转(-imuYawStart)，即Ry(yaw).inverse
   float x1 = cos(imuYawStart) * imuVeloFromStartXCur - sin(imuYawStart) * imuVeloFromStartZCur;
   float y1 = imuVeloFromStartYCur;
@@ -213,7 +213,7 @@ void TransformToStartIMU(PointType *p)
     Rz(pitch).inverse * Rx(pitch).inverse * Ry(yaw).inverse * Pg
     transfrom global points to the local frame
   *********************************************************************************/
-  
+
   //绕y轴旋转(-imuYawStart)
   float x4 = cos(imuYawStart) * x3 - sin(imuYawStart) * z3;
   float y4 = y3;
@@ -261,11 +261,11 @@ void AccumulateIMUShift()
   //要求imu的频率至少比lidar高，这样的imu信息才使用，后面校正也才有意义
   if (timeDiff < scanPeriod) {//（隐含从静止开始运动）
     //求每个imu时间点的位移与速度,两点之间视为匀加速直线运动
-    imuShiftX[imuPointerLast] = imuShiftX[imuPointerBack] + imuVeloX[imuPointerBack] * timeDiff 
+    imuShiftX[imuPointerLast] = imuShiftX[imuPointerBack] + imuVeloX[imuPointerBack] * timeDiff
                               + accX * timeDiff * timeDiff / 2;
-    imuShiftY[imuPointerLast] = imuShiftY[imuPointerBack] + imuVeloY[imuPointerBack] * timeDiff 
+    imuShiftY[imuPointerLast] = imuShiftY[imuPointerBack] + imuVeloY[imuPointerBack] * timeDiff
                               + accY * timeDiff * timeDiff / 2;
-    imuShiftZ[imuPointerLast] = imuShiftZ[imuPointerBack] + imuVeloZ[imuPointerBack] * timeDiff 
+    imuShiftZ[imuPointerLast] = imuShiftZ[imuPointerBack] + imuVeloZ[imuPointerBack] * timeDiff
                               + accZ * timeDiff * timeDiff / 2;
 
     imuVeloX[imuPointerLast] = imuVeloX[imuPointerBack] + accX * timeDiff;
@@ -288,7 +288,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   //记录每个scan有曲率的点的开始和结束索引
   std::vector<int> scanStartInd(N_SCANS, 0);
   std::vector<int> scanEndInd(N_SCANS, 0);
-  
+
   //当前点云时间
   double timeScanCur = laserCloudMsg->header.stamp.toSec();
   pcl::PointCloud<pcl::PointXYZ> laserCloudIn;
@@ -304,7 +304,15 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   //lidar scan结束点的旋转角，加2*pi使点云旋转周期为2*pi
   float endOri = -atan2(laserCloudIn.points[cloudSize - 1].y,
                         laserCloudIn.points[cloudSize - 1].x) + 2 * M_PI;
-
+  //需要说明，每个Sweep不一定是从水平0°开始的, 大概是因为电机一直处于高速旋转中,没有一个复位的过程,
+  //雷达只在电机旋转到接近0°时记下当前对应激光点的精确坐标.同样,结束的位置,也不一定时0°.都是在0°周围.
+  //而第一个点和最后一个点的水平角度差也就不一定是2π, 而是接近2π的一个值, 有可能大于2π,这就带来了一定的复杂性.
+  //比如说,起始角度是0rad,结束角度是（2π+0.5）rad.而我们通过点的坐标计算其水平角度,如果得到的角度是0.25rad,
+  //由于这是一个归一化的角度,可能是0.25rad,也可能是（0.25+2π）rad归一化得到的,那么这个激光点是开始的时候(0.25)扫描的,
+  //还是结束的时候(0.25+2π)时扫描的?当然上面的描述不够严谨, 实际归一化的角度是在[-π,π]范围内的.请参考代码理解。
+  //所以, 光从点的3d（XYZ）位置, 有时是无法得到其精确的扫描时间的, 我们还需要结合时序信息,因为一个Sweep中返回的
+  //点是按时间顺序排列的,所以,时间靠前的0.25,就是一开始扫描的, 而时间靠后的0.25,就是最后扫描的0.25+2π.
+  //代码中用一个变量half_passed解决了此问题.对于其他型号的激光雷达, 只要理解了其每帧激光扫描的点顺序,就可以很容易的套用
   //结束方位角与开始方位角差值控制在(PI,3*PI)范围，允许lidar不是一个圆周扫描
   //正常情况下在这个范围内：pi < endOri - startOri < 3*pi，异常则修正
   if (endOri - startOri > 3 * M_PI) {
@@ -316,7 +324,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   bool halfPassed = false;
   int count = cloudSize;
   PointType point;
-  std::vector<pcl::PointCloud<PointType> > laserCloudScans(N_SCANS);
+  std::vector<pcl::PointCloud<PointType>> laserCloudScans(N_SCANS);
   for (int i = 0; i < cloudSize; i++) {
     //坐标轴交换，velodyne lidar的坐标系也转换到z轴向前，x轴向左的右手坐标系
     point.x = laserCloudIn.points[i].y;
@@ -327,7 +335,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     float angle = atan(point.y / sqrt(point.x * point.x + point.z * point.z)) * 180 / M_PI;
     int scanID;
     //仰角四舍五入(加减0.5截断效果等于四舍五入)
-    int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5)); 
+    int roundedAngle = int(angle + (angle<0.0?-0.5:+0.5));
     if (roundedAngle > 0){
       scanID = roundedAngle;
     }
@@ -340,7 +348,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       continue;
     }
 
-    //该点的旋转角
+    //该点的旋转角,当然上面的描述不够严谨, 实际归一化的角度是在[-π,π]范围内的.请参考代码理解。
     float ori = -atan2(point.x, point.z);
     if (!halfPassed) {//根据扫描线是否旋转过半选择与起始位置还是终止位置进行差值计算，从而进行补偿
         //确保-pi/2 < ori - startOri < 3*pi/2
@@ -361,7 +369,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         ori += 2 * M_PI;
       } else if (ori > endOri + M_PI / 2) {
         ori -= 2 * M_PI;
-      } 
+      }
     }
 
     //-0.5 < relTime < 1.5（点旋转的角度与整个周期旋转角度的比率, 即点云中点的相对时间）
@@ -395,9 +403,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
       } else {//找到了点云时间戳小于IMU时间戳的IMU位置,则该点必处于imuPointerBack和imuPointerFront之间，据此线性插值，计算点云点的速度，位移和欧拉角
         int imuPointerBack = (imuPointerFront + imuQueLength - 1) % imuQueLength;
         //按时间距离计算权重分配比率,也即线性插值
-        float ratioFront = (timeScanCur + pointTime - imuTime[imuPointerBack]) 
+        float ratioFront = (timeScanCur + pointTime - imuTime[imuPointerBack])
                          / (imuTime[imuPointerFront] - imuTime[imuPointerBack]);
-        float ratioBack = (imuTime[imuPointerFront] - timeScanCur - pointTime) 
+        float ratioBack = (imuTime[imuPointerFront] - timeScanCur - pointTime)
                         / (imuTime[imuPointerFront] - imuTime[imuPointerBack]);
 
         imuRollCur = imuRoll[imuPointerFront] * ratioFront + imuRoll[imuPointerBack] * ratioBack;
@@ -450,21 +458,21 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
   }
   int scanCount = -1;
   for (int i = 5; i < cloudSize - 5; i++) {//使用每个点的前后五个点计算曲率，因此前五个与最后五个点跳过
-    float diffX = laserCloud->points[i - 5].x + laserCloud->points[i - 4].x 
-                + laserCloud->points[i - 3].x + laserCloud->points[i - 2].x 
-                + laserCloud->points[i - 1].x - 10 * laserCloud->points[i].x 
+    float diffX = laserCloud->points[i - 5].x + laserCloud->points[i - 4].x
+                + laserCloud->points[i - 3].x + laserCloud->points[i - 2].x
+                + laserCloud->points[i - 1].x - 10 * laserCloud->points[i].x
                 + laserCloud->points[i + 1].x + laserCloud->points[i + 2].x
                 + laserCloud->points[i + 3].x + laserCloud->points[i + 4].x
                 + laserCloud->points[i + 5].x;
-    float diffY = laserCloud->points[i - 5].y + laserCloud->points[i - 4].y 
-                + laserCloud->points[i - 3].y + laserCloud->points[i - 2].y 
-                + laserCloud->points[i - 1].y - 10 * laserCloud->points[i].y 
+    float diffY = laserCloud->points[i - 5].y + laserCloud->points[i - 4].y
+                + laserCloud->points[i - 3].y + laserCloud->points[i - 2].y
+                + laserCloud->points[i - 1].y - 10 * laserCloud->points[i].y
                 + laserCloud->points[i + 1].y + laserCloud->points[i + 2].y
                 + laserCloud->points[i + 3].y + laserCloud->points[i + 4].y
                 + laserCloud->points[i + 5].y;
-    float diffZ = laserCloud->points[i - 5].z + laserCloud->points[i - 4].z 
-                + laserCloud->points[i - 3].z + laserCloud->points[i - 2].z 
-                + laserCloud->points[i - 1].z - 10 * laserCloud->points[i].z 
+    float diffZ = laserCloud->points[i - 5].z + laserCloud->points[i - 4].z
+                + laserCloud->points[i - 3].z + laserCloud->points[i - 2].z
+                + laserCloud->points[i - 1].z - 10 * laserCloud->points[i].z
                 + laserCloud->points[i + 1].z + laserCloud->points[i + 2].z
                 + laserCloud->points[i + 3].z + laserCloud->points[i + 4].z
                 + laserCloud->points[i + 5].z;
@@ -503,12 +511,12 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     if (diff > 0.1) {//前提:两个点之间距离要大于0.1
 
         //点的深度
-      float depth1 = sqrt(laserCloud->points[i].x * laserCloud->points[i].x + 
+      float depth1 = sqrt(laserCloud->points[i].x * laserCloud->points[i].x +
                      laserCloud->points[i].y * laserCloud->points[i].y +
                      laserCloud->points[i].z * laserCloud->points[i].z);
 
       //后一个点的深度
-      float depth2 = sqrt(laserCloud->points[i + 1].x * laserCloud->points[i + 1].x + 
+      float depth2 = sqrt(laserCloud->points[i + 1].x * laserCloud->points[i + 1].x +
                      laserCloud->points[i + 1].y * laserCloud->points[i + 1].y +
                      laserCloud->points[i + 1].z * laserCloud->points[i + 1].z);
 
@@ -597,7 +605,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
         //如果曲率大的点，曲率的确比较大，并且未被筛选过滤掉
         if (cloudNeighborPicked[ind] == 0 &&
             cloudCurvature[ind] > 0.1) {
-        
+
           largestPickedNum++;
           if (largestPickedNum <= 2) {//挑选曲率最大的前2个点放入sharp点集合
             cloudLabel[ind] = 2;//2代表点曲率很大
@@ -614,11 +622,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
           //将曲率比较大的点的前后各5个连续距离比较近的点筛选出去，防止特征点聚集，使得特征点在每个方向上尽量分布均匀
           for (int l = 1; l <= 5; l++) {
-            float diffX = laserCloud->points[ind + l].x 
+            float diffX = laserCloud->points[ind + l].x
                         - laserCloud->points[ind + l - 1].x;
-            float diffY = laserCloud->points[ind + l].y 
+            float diffY = laserCloud->points[ind + l].y
                         - laserCloud->points[ind + l - 1].y;
-            float diffZ = laserCloud->points[ind + l].z 
+            float diffZ = laserCloud->points[ind + l].z
                         - laserCloud->points[ind + l - 1].z;
             if (diffX * diffX + diffY * diffY + diffZ * diffZ > 0.05) {
               break;
@@ -627,11 +635,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
             cloudNeighborPicked[ind + l] = 1;
           }
           for (int l = -1; l >= -5; l--) {
-            float diffX = laserCloud->points[ind + l].x 
+            float diffX = laserCloud->points[ind + l].x
                         - laserCloud->points[ind + l + 1].x;
-            float diffY = laserCloud->points[ind + l].y 
+            float diffY = laserCloud->points[ind + l].y
                         - laserCloud->points[ind + l + 1].y;
-            float diffZ = laserCloud->points[ind + l].z 
+            float diffZ = laserCloud->points[ind + l].z
                         - laserCloud->points[ind + l + 1].z;
             if (diffX * diffX + diffY * diffY + diffZ * diffZ > 0.05) {
               break;
@@ -661,11 +669,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
 
           cloudNeighborPicked[ind] = 1;
           for (int l = 1; l <= 5; l++) {//同样防止特征点聚集
-            float diffX = laserCloud->points[ind + l].x 
+            float diffX = laserCloud->points[ind + l].x
                         - laserCloud->points[ind + l - 1].x;
-            float diffY = laserCloud->points[ind + l].y 
+            float diffY = laserCloud->points[ind + l].y
                         - laserCloud->points[ind + l - 1].y;
-            float diffZ = laserCloud->points[ind + l].z 
+            float diffZ = laserCloud->points[ind + l].z
                         - laserCloud->points[ind + l - 1].z;
             if (diffX * diffX + diffY * diffY + diffZ * diffZ > 0.05) {
               break;
@@ -674,11 +682,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
             cloudNeighborPicked[ind + l] = 1;
           }
           for (int l = -1; l >= -5; l--) {
-            float diffX = laserCloud->points[ind + l].x 
+            float diffX = laserCloud->points[ind + l].x
                         - laserCloud->points[ind + l + 1].x;
-            float diffY = laserCloud->points[ind + l].y 
+            float diffY = laserCloud->points[ind + l].y
                         - laserCloud->points[ind + l + 1].y;
-            float diffZ = laserCloud->points[ind + l].z 
+            float diffZ = laserCloud->points[ind + l].z
                         - laserCloud->points[ind + l + 1].z;
             if (diffX * diffX + diffY * diffY + diffZ * diffZ > 0.05) {
               break;
@@ -708,7 +716,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr& laserCloudMsg)
     surfPointsLessFlat += surfPointsLessFlatScanDS;
   }
 
-  //publich消除非匀速运动畸变后的所有的点
+  //publish消除非匀速运动畸变后的所有的点
   sensor_msgs::PointCloud2 laserCloudOutMsg;
   pcl::toROSMsg(*laserCloud, laserCloudOutMsg);
   laserCloudOutMsg.header.stamp = laserCloudMsg->header.stamp;
@@ -803,7 +811,7 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "scanRegistration");
   ros::NodeHandle nh;
 
-  ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2> 
+  ros::Subscriber subLaserCloud = nh.subscribe<sensor_msgs::PointCloud2>
                                   ("/velodyne_points", 2, laserCloudHandler);
 
   ros::Subscriber subImu = nh.subscribe<sensor_msgs::Imu> ("/imu/data", 50, imuHandler);
@@ -829,4 +837,3 @@ int main(int argc, char** argv)
 
   return 0;
 }
-
